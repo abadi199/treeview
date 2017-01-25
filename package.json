@@ -1,0 +1,19 @@
+{
+  "name": "treeview",
+  "version": "1.0.0",
+  "description": "Tree View for Elm",
+  "main": "index.js",
+  "scripts": {
+    "test": "elm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abadi199/treeview.git"
+  },
+  "author": "Abadi Kurniawan",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/abadi199/treeview/issues"
+  },
+  "homepage": "https://github.com/abadi199/treeview#readme"
+}
