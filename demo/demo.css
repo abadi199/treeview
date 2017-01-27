@@ -1,0 +1,6 @@
+.treeview { padding-left: 0; }
+.treeview .node { list-style-type: none; transition: height .25s; }
+.treeview .node.collapsed { overflow: hidden; }
+.treeview .node.expanded { overflow: hidden; }
+.treeview .arrow { cursor: pointer; } 
+.treeview .arrow.no-children { cursor: default; width: 1em; } 
