@@ -3,25 +3,10 @@ module Demo exposing (main)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import TreeView exposing (Node(..))
+import Data
 
 
-stylesheet =
-    let
-        tag =
-            "link"
-
-        attrs =
-            [ attribute "rel" "stylesheet"
-            , attribute "property" "stylesheet"
-            , attribute "href" "demo.css"
-            ]
-
-        children =
-            []
-    in
-        node tag attrs children
-
-
+main : Program Never Model Msg
 main =
     Html.program
         { init = init
@@ -31,44 +16,33 @@ main =
         }
 
 
+config : TreeView.Config Msg
+config =
+    { onState = StateChange, onChecked = Checked, useCheckbox = True }
+
+
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.none
+    TreeView.subscriptions config model.state
 
 
 type alias Model =
     { state : TreeView.InternalState }
 
 
+init : ( Model, Cmd Msg )
 init =
     ( { state = TreeView.initialState }, Cmd.none )
 
 
+view : Model -> Html Msg
 view model =
     div []
-        [ stylesheet
+        [ Data.stylesheet
         , TreeView.treeView config
             model.state
-            [ Node
-                { id = "1"
-                , text = "1. One"
-                , children =
-                    [ Node { id = "1.1", text = "1.1 One-One", children = [] }
-                    , Node { id = "1.2", text = "1.2 One-Two", children = [] }
-                    ]
-                }
-            , Node
-                { id = "2"
-                , text = "2. Two"
-                , children = []
-                }
-            ]
+            Data.tree
         ]
-
-
-config : TreeView.Config Msg
-config =
-    { onState = StateChange, onChecked = Checked, useCheckbox = True }
 
 
 type Msg

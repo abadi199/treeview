@@ -27,9 +27,65 @@ subscriptions config internalState =
             unboxState internalState
 
         updateState time =
-            config.onState <| InternalState { state | currentTime = time }
+            let
+                updatedTime =
+                    { state | currentTime = time }
+
+                updatedState =
+                    case state.action of
+                        Idle ->
+                            updatedTime
+
+                        Expanding ->
+                            updateHeights config updatedTime
+            in
+                updatedState
+                    |> InternalState
+                    |> config.onState
     in
         AnimationFrame.times updateState
+
+
+updateHeights : Config msg -> State -> State
+updateHeights config state =
+    let
+        collapsed =
+            not <| Dict.member state.id state.expandedNodes
+
+        updateExpandedNodes =
+            if collapsed then
+                Dict.insert state.id ()
+            else
+                Dict.remove state.id
+
+        updateState height =
+            let
+                _ =
+                    Debug.log "height" height
+            in
+                state.expandedNodes
+                    |> updateExpandedNodes
+                    |> (\expandedNodes ->
+                            { state
+                                | expandedNodes = expandedNodes
+                                , action = Idle
+                                , heights =
+                                    if height > 0 then
+                                        Dict.insert state.id height state.heights
+                                    else
+                                        state.heights
+                            }
+                       )
+
+        decode : Json.Decode.Decoder Float
+        decode =
+            DOM.target <| DOM.nextSibling <| DOM.nextSibling (DOM.boundingClientRect |> Json.Decode.map .height)
+    in
+        state.currentNode
+            |> Maybe.map (Json.Decode.decodeValue decode)
+            |> Maybe.andThen Result.toMaybe
+            |> Maybe.map updateState
+            |> Maybe.withDefault state
 
 
 type alias Data =
@@ -47,7 +103,10 @@ type alias NodeValue =
 type alias State =
     { expandedNodes : Dict String ()
     , currentTime : Time.Time
+    , currentNode : Maybe Json.Decode.Value
     , heights : Dict String Float
+    , action : Action
+    , id : String
     }
 
 
@@ -56,8 +115,16 @@ initialState =
     InternalState
         { expandedNodes = Dict.empty
         , currentTime = 0
+        , id = ""
+        , currentNode = Nothing
         , heights = Dict.empty
+        , action = Idle
         }
+
+
+type Action
+    = Idle
+    | Expanding
 
 
 type InternalState
@@ -88,8 +155,20 @@ defaultConfig onState onChecked =
 
 treeView : Config msg -> InternalState -> Data -> Html msg
 treeView config internalState data =
-    ul [ class "treeview" ]
-        (List.map (unbox >> renderNodeValue config (unboxState internalState)) data)
+    let
+        state =
+            unboxState internalState
+
+        styles =
+            case state.action of
+                Expanding ->
+                    style [ ( "visibility", "hidden" ) ]
+
+                Idle ->
+                    style []
+    in
+        ul [ class "treeview", styles ]
+            (List.map (unbox >> renderNodeValue config state) data)
 
 
 renderNodeValue : Config msg -> State -> NodeValue -> Html msg
@@ -102,7 +181,10 @@ renderNodeValue config state nodeValue =
             not <| List.isEmpty nodeValue.children
     in
         li []
-            [ span [ classList [ ( "arrow", True ), ( "no-children", not hasChildren ) ], arrowClick config state nodeValue.id ]
+            [ span
+                [ classList [ ( "arrow", True ), ( "no-children", not hasChildren ) ]
+                , arrowClick config state nodeValue.id
+                ]
                 [ case ( hasChildren, collapsed ) of
                     ( True, True ) ->
                         text "▶"
@@ -126,17 +208,31 @@ renderNodeValue config state nodeValue =
                                 "expanded"
                            )
                 , style <|
-                    if collapsed then
-                        [ ( "height", "0px" ) ]
+                    if state.action == Expanding then
+                        [ ( "height", "auto" ) ]
+                    else if not <| Dict.member nodeValue.id state.heights then
+                        [ ( "height", "0" ) ]
                     else
                         [ ( "height", (Dict.get nodeValue.id state.heights |> Maybe.withDefault 0 |> toString) ++ "px" ) ]
                 ]
                 (List.map (unbox >> renderNodeValue config state) nodeValue.children)
+            , text <| toString state.action
             ]
 
 
 arrowClick : Config msg -> State -> String -> Html.Attribute msg
 arrowClick config state id =
+    let
+        updateState value =
+            { state | currentNode = Just value, action = Expanding }
+                |> InternalState
+                |> config.onState
+    in
+        on "click" (Json.Decode.value |> Json.Decode.map updateState)
+
+
+arrowClick_ : Config msg -> State -> String -> Html.Attribute msg
+arrowClick_ config state id =
     let
         collapsed =
             not <| Dict.member id state.expandedNodes
