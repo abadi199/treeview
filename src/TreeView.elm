@@ -36,14 +36,32 @@ subscriptions config internalState =
                         Idle ->
                             updatedTime
 
-                        Expanding ->
+                        Probing ->
                             updateHeights config updatedTime
+
+                        Expanding ->
+                            expanded updatedTime
+
+                        Expanded ->
+                            updatedTime
             in
                 updatedState
                     |> InternalState
                     |> config.onState
     in
         AnimationFrame.times updateState
+
+
+
+-- Time.every Time.second updateState
+
+
+idle state =
+    { state | action = Idle }
+
+
+expanded state =
+    { state | action = Expanded }
 
 
 updateHeights : Config msg -> State -> State
@@ -68,7 +86,7 @@ updateHeights config state =
                     |> (\expandedNodes ->
                             { state
                                 | expandedNodes = expandedNodes
-                                , action = Idle
+                                , action = Expanding
                                 , heights =
                                     if height > 0 then
                                         Dict.insert state.id height state.heights
@@ -124,7 +142,9 @@ initialState =
 
 type Action
     = Idle
+    | Probing
     | Expanding
+    | Expanded
 
 
 type InternalState
@@ -161,14 +181,18 @@ treeView config internalState data =
 
         styles =
             case state.action of
-                Expanding ->
-                    style [ ( "visibility", "hidden" ) ]
+                Probing ->
+                    style [ ( "visibility", "visible" ) ]
 
-                Idle ->
+                _ ->
                     style []
     in
-        ul [ class "treeview", styles ]
-            (List.map (unbox >> renderNodeValue config state) data)
+        div []
+            [ ul [ class "treeview", styles ]
+                (List.map (unbox >> renderNodeValue config state) data)
+            , text <| toString state.action
+            , text <| toString state.heights
+            ]
 
 
 renderNodeValue : Config msg -> State -> NodeValue -> Html msg
@@ -208,15 +232,23 @@ renderNodeValue config state nodeValue =
                                 "expanded"
                            )
                 , style <|
-                    if state.action == Expanding then
-                        [ ( "height", "auto" ) ]
-                    else if not <| Dict.member nodeValue.id state.heights then
-                        [ ( "height", "0" ) ]
-                    else
-                        [ ( "height", (Dict.get nodeValue.id state.heights |> Maybe.withDefault 0 |> toString) ++ "px" ) ]
+                    case state.action of
+                        Probing ->
+                            [ ( "height", "auto" ) ]
+
+                        Expanding ->
+                            [ ( "height", "0" ) ]
+
+                        Expanded ->
+                            [ ( "height", (Dict.get nodeValue.id state.heights |> Maybe.withDefault 0 |> toString) ++ "px" ) ]
+
+                        Idle ->
+                            if not <| Dict.member nodeValue.id state.heights then
+                                [ ( "height", "0" ) ]
+                            else
+                                [ ( "height", (Dict.get nodeValue.id state.heights |> Maybe.withDefault 0 |> toString) ++ "px" ) ]
                 ]
                 (List.map (unbox >> renderNodeValue config state) nodeValue.children)
-            , text <| toString state.action
             ]
 
 
@@ -224,46 +256,15 @@ arrowClick : Config msg -> State -> String -> Html.Attribute msg
 arrowClick config state id =
     let
         updateState value =
-            { state | currentNode = Just value, action = Expanding }
+            { state
+                | currentNode = Just value
+                , action = Probing
+                , id = id
+            }
                 |> InternalState
                 |> config.onState
     in
         on "click" (Json.Decode.value |> Json.Decode.map updateState)
-
-
-arrowClick_ : Config msg -> State -> String -> Html.Attribute msg
-arrowClick_ config state id =
-    let
-        collapsed =
-            not <| Dict.member id state.expandedNodes
-
-        updateExpandedNodes =
-            if collapsed then
-                Dict.insert id ()
-            else
-                Dict.remove id
-
-        updatedState height =
-            state.expandedNodes
-                |> updateExpandedNodes
-                |> (\expandedNodes ->
-                        { state
-                            | expandedNodes = expandedNodes
-                            , heights =
-                                if height > 0 then
-                                    Dict.insert id height state.heights
-                                else
-                                    state.heights
-                        }
-                   )
-                |> InternalState
-                |> config.onState
-
-        decode : Json.Decode.Decoder Float
-        decode =
-            DOM.target <| DOM.nextSibling <| DOM.nextSibling (DOM.boundingClientRect |> Json.Decode.map .height)
-    in
-        on "click" (decode |> Json.Decode.map (updatedState))
 
 
 unbox : Node -> NodeValue
