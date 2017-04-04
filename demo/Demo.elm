@@ -18,12 +18,12 @@ main =
 
 config : TreeView.Config Msg
 config =
-    { onState = StateChange, onChecked = Checked, useCheckbox = True }
+    { onState = StateChange, onChecked = Checked, useCheckbox = True, nodeHeight = 24 }
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    TreeView.subscriptions config model.state
+    Sub.none
 
 
 type alias Model =

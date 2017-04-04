@@ -7,103 +7,13 @@ module TreeView
         , Node(..)
         , NodeValue
         , initialState
-        , subscriptions
         )
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Dict exposing (Dict)
+import Set exposing (Set)
 import Json.Decode
-import AnimationFrame
-import Time
-import DOM
-
-
-subscriptions : Config msg -> InternalState -> Sub msg
-subscriptions config internalState =
-    let
-        state =
-            unboxState internalState
-
-        updateState time =
-            let
-                updatedTime =
-                    { state | currentTime = time }
-
-                updatedState =
-                    case state.action of
-                        Idle ->
-                            updatedTime
-
-                        Probing ->
-                            updateHeights config updatedTime
-
-                        Expanding ->
-                            expanded updatedTime
-
-                        Expanded ->
-                            updatedTime
-            in
-                updatedState
-                    |> InternalState
-                    |> config.onState
-    in
-        AnimationFrame.times updateState
-
-
-
--- Time.every Time.second updateState
-
-
-idle state =
-    { state | action = Idle }
-
-
-expanded state =
-    { state | action = Expanded }
-
-
-updateHeights : Config msg -> State -> State
-updateHeights config state =
-    let
-        collapsed =
-            not <| Dict.member state.id state.expandedNodes
-
-        updateExpandedNodes =
-            if collapsed then
-                Dict.insert state.id ()
-            else
-                Dict.remove state.id
-
-        updateState height =
-            let
-                _ =
-                    Debug.log "height" height
-            in
-                state.expandedNodes
-                    |> updateExpandedNodes
-                    |> (\expandedNodes ->
-                            { state
-                                | expandedNodes = expandedNodes
-                                , action = Expanding
-                                , heights =
-                                    if height > 0 then
-                                        Dict.insert state.id height state.heights
-                                    else
-                                        state.heights
-                            }
-                       )
-
-        decode : Json.Decode.Decoder Float
-        decode =
-            DOM.target <| DOM.nextSibling <| DOM.nextSibling (DOM.boundingClientRect |> Json.Decode.map .height)
-    in
-        state.currentNode
-            |> Maybe.map (Json.Decode.decodeValue decode)
-            |> Maybe.andThen Result.toMaybe
-            |> Maybe.map updateState
-            |> Maybe.withDefault state
 
 
 type alias Data =
@@ -119,32 +29,14 @@ type alias NodeValue =
 
 
 type alias State =
-    { expandedNodes : Dict String ()
-    , currentTime : Time.Time
-    , currentNode : Maybe Json.Decode.Value
-    , heights : Dict String Float
-    , action : Action
-    , id : String
+    { expandedNodes : Set String
     }
 
 
 initialState : InternalState
 initialState =
     InternalState
-        { expandedNodes = Dict.empty
-        , currentTime = 0
-        , id = ""
-        , currentNode = Nothing
-        , heights = Dict.empty
-        , action = Idle
-        }
-
-
-type Action
-    = Idle
-    | Probing
-    | Expanding
-    | Expanded
+        { expandedNodes = Set.empty }
 
 
 type InternalState
@@ -162,6 +54,7 @@ type alias Config msg =
     { onState : InternalState -> msg
     , onChecked : List String -> msg
     , useCheckbox : Bool
+    , nodeHeight : Int
     }
 
 
@@ -170,6 +63,7 @@ defaultConfig onState onChecked =
     { onState = onState
     , onChecked = onChecked
     , useCheckbox = True
+    , nodeHeight = 10
     }
 
 
@@ -178,78 +72,101 @@ treeView config internalState data =
     let
         state =
             unboxState internalState
-
-        styles =
-            case state.action of
-                Probing ->
-                    style [ ( "visibility", "visible" ) ]
-
-                _ ->
-                    style []
     in
         div []
-            [ ul [ class "treeview", styles ]
+            [ ul [ class "treeview" ]
                 (List.map (unbox >> renderNodeValue config state) data)
-            , text <| toString state.action
-            , text <| toString state.heights
             ]
 
 
 renderNodeValue : Config msg -> State -> NodeValue -> Html msg
 renderNodeValue config state nodeValue =
-    let
-        collapsed =
-            not <| Dict.member nodeValue.id state.expandedNodes
-
-        hasChildren =
-            not <| List.isEmpty nodeValue.children
-    in
-        li []
-            [ span
-                [ classList [ ( "arrow", True ), ( "no-children", not hasChildren ) ]
-                , arrowClick config state nodeValue.id
-                ]
-                [ case ( hasChildren, collapsed ) of
-                    ( True, True ) ->
-                        text "▶"
-
-                    ( True, False ) ->
-                        text "▼"
-
-                    _ ->
-                        text ""
-                ]
-            , if config.useCheckbox then
-                label [] [ input [ type_ "checkbox" ] [], text nodeValue.text ]
-              else
-                text nodeValue.text
-            , ul
-                [ class <|
-                    "node "
-                        ++ (if collapsed then
-                                "collapsed"
-                            else
-                                "expanded"
-                           )
-                , style <|
-                    case state.action of
-                        Probing ->
-                            [ ( "height", "auto" ) ]
-
-                        Expanding ->
-                            [ ( "height", "0" ) ]
-
-                        Expanded ->
-                            [ ( "height", (Dict.get nodeValue.id state.heights |> Maybe.withDefault 0 |> toString) ++ "px" ) ]
-
-                        Idle ->
-                            if not <| Dict.member nodeValue.id state.heights then
-                                [ ( "height", "0" ) ]
-                            else
-                                [ ( "height", (Dict.get nodeValue.id state.heights |> Maybe.withDefault 0 |> toString) ++ "px" ) ]
-                ]
-                (List.map (unbox >> renderNodeValue config state) nodeValue.children)
+    li [ setNodeHeight config state nodeValue ]
+        [ span
+            [ classList [ ( "arrow", True ), ( "no-children", not (hasChildren nodeValue) ) ]
+            , arrowClick config state nodeValue.id
             ]
+            [ case ( hasChildren nodeValue, isCollapsed state nodeValue ) of
+                ( True, True ) ->
+                    text "+"
+
+                ( True, False ) ->
+                    text "-"
+
+                _ ->
+                    text ""
+            ]
+        , leaf config nodeValue
+        , children config state nodeValue
+        ]
+
+
+setNodeHeight : Config msg -> State -> NodeValue -> Attribute msg
+setNodeHeight config state nodeValue =
+    style
+        [ ( "height", toString (calculateHeight config state nodeValue) ++ "px" )
+        , ( "transition", "height 0.5s" )
+        , ( "overflow", "hidden" )
+        ]
+
+
+calculateHeight : Config msg -> State -> NodeValue -> Int
+calculateHeight config state nodeValue =
+    if hasVisibleChildren state nodeValue then
+        List.foldl
+            (\node height -> height + calculateHeight config state (unbox node))
+            config.nodeHeight
+            nodeValue.children
+    else
+        config.nodeHeight
+
+
+leaf : Config msg -> NodeValue -> Html msg
+leaf config nodeValue =
+    if config.useCheckbox then
+        label [ setLeafHeight config ]
+            [ input [ type_ "checkbox" ] [], text nodeValue.text ]
+    else
+        div
+            [ setLeafHeight config ]
+            [ text nodeValue.text ]
+
+
+children : Config msg -> State -> NodeValue -> Html msg
+children config state nodeValue =
+    if hasVisibleChildren state nodeValue then
+        ul
+            [ class <|
+                "node "
+                    ++ (if isCollapsed state nodeValue then
+                            "collapsed"
+                        else
+                            "expanded"
+                       )
+            ]
+            (List.map (unbox >> renderNodeValue config state) nodeValue.children)
+    else
+        text ""
+
+
+hasChildren : NodeValue -> Bool
+hasChildren nodeValue =
+    not (List.isEmpty nodeValue.children)
+
+
+hasVisibleChildren : State -> NodeValue -> Bool
+hasVisibleChildren state nodeValue =
+    hasChildren nodeValue && not (isCollapsed state nodeValue)
+
+
+isCollapsed : State -> NodeValue -> Bool
+isCollapsed state nodeValue =
+    not <| Set.member nodeValue.id state.expandedNodes
+
+
+setLeafHeight : Config msg -> Attribute msg
+setLeafHeight config =
+    style [ ( "height", toString config.nodeHeight ++ "px" ), ( "display", "inline-block" ) ]
 
 
 arrowClick : Config msg -> State -> String -> Html.Attribute msg
@@ -257,14 +174,20 @@ arrowClick config state id =
     let
         updateState value =
             { state
-                | currentNode = Just value
-                , action = Probing
-                , id = id
+                | expandedNodes = updateExpandedNodes state id
             }
                 |> InternalState
                 |> config.onState
     in
         on "click" (Json.Decode.value |> Json.Decode.map updateState)
+
+
+updateExpandedNodes : State -> String -> Set String
+updateExpandedNodes state id =
+    if Set.member id state.expandedNodes then
+        Set.remove id state.expandedNodes
+    else
+        Set.insert id state.expandedNodes
 
 
 unbox : Node -> NodeValue
