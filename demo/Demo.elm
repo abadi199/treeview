@@ -57,4 +57,5 @@ update msg model =
             { model | state = internalState } ! []
 
         Checked list ->
+            let _ = Debug.log "checked" list in
             model ! []

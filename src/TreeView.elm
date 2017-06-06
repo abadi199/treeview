@@ -25,7 +25,7 @@ type Node
 
 
 type alias NodeValue =
-    { id : String, text : String, checked: Bool, children : List Node }
+    { id : String, text : String, checked : Bool, children : List Node }
 
 
 type alias State =
@@ -125,25 +125,37 @@ leaf : Config msg -> NodeValue -> Html msg
 leaf config nodeValue =
     if config.useCheckbox then
         label [ setLeafHeight config ]
-            [ input [ type_ "checkbox", checked nodeValue.checked ] [], text nodeValue.text ]
+            [ input [ type_ "checkbox", checked nodeValue.checked, onCheck (onCheckHandler config nodeValue) ] [], text nodeValue.text ]
     else
         div
             [ setLeafHeight config ]
             [ text nodeValue.text ]
 
 
+onCheckHandler : Config msg -> NodeValue -> Bool -> msg
+onCheckHandler config nodeValue checked =
+    let
+        checkedCallback =
+            config.onChecked
+
+        nodeValue_ =
+            { nodeValue | checked = not nodeValue.checked }
+    in
+        checkedCallback [ nodeValue.id ]
+
+
 children : Config msg -> State -> NodeValue -> Html msg
 children config state nodeValue =
-        ul
-            [ class <|
-                "node "
-                    ++ (if isCollapsed state nodeValue then
-                            "collapsed"
-                        else
-                            "expanded"
-                       )
-            ]
-            (List.map (unbox >> renderNodeValue config state) nodeValue.children)
+    ul
+        [ class <|
+            "node "
+                ++ (if isCollapsed state nodeValue then
+                        "collapsed"
+                    else
+                        "expanded"
+                   )
+        ]
+        (List.map (unbox >> renderNodeValue config state) nodeValue.children)
 
 
 hasChildren : NodeValue -> Bool
