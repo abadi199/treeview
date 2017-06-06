@@ -25,7 +25,7 @@ type Node
 
 
 type alias NodeValue =
-    { id : String, text : String, children : List Node }
+    { id : String, text : String, checked: Bool, children : List Node }
 
 
 type alias State =
@@ -125,7 +125,7 @@ leaf : Config msg -> NodeValue -> Html msg
 leaf config nodeValue =
     if config.useCheckbox then
         label [ setLeafHeight config ]
-            [ input [ type_ "checkbox" ] [], text nodeValue.text ]
+            [ input [ type_ "checkbox", checked nodeValue.checked ] [], text nodeValue.text ]
     else
         div
             [ setLeafHeight config ]
@@ -134,7 +134,6 @@ leaf config nodeValue =
 
 children : Config msg -> State -> NodeValue -> Html msg
 children config state nodeValue =
-    if hasVisibleChildren state nodeValue then
         ul
             [ class <|
                 "node "
@@ -145,8 +144,6 @@ children config state nodeValue =
                        )
             ]
             (List.map (unbox >> renderNodeValue config state) nodeValue.children)
-    else
-        text ""
 
 
 hasChildren : NodeValue -> Bool
